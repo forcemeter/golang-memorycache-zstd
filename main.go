@@ -14,6 +14,8 @@ func main() {
 }
 
 var input = loadContent()
+var encoder, _ = zstd.NewWriter(nil)
+var decoder, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(0))
 
 func Cache() {
 	cache, err := ristretto.NewCache(&ristretto.Config{
@@ -57,11 +59,9 @@ func loadContent() []byte {
 }
 
 func Compress(src []byte) []byte {
-	var encoder, _ = zstd.NewWriter(nil)
 	return encoder.EncodeAll(src, make([]byte, 0, len(src)))
 }
 
 func Decompress(src []byte) ([]byte, error) {
-	var decoder, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(0))
 	return decoder.DecodeAll(src, nil)
 }
