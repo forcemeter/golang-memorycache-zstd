@@ -7,33 +7,42 @@ import (
 	"github.com/gogf/gf/v2/os/gtime"
 	"github.com/golang/glog"
 	"github.com/klauspost/compress/zstd"
+	"net/http"
 )
 
-func main() {
-	Cache()
-}
-
+var debug = false
 var input = loadContent()
 var encoder, _ = zstd.NewWriter(nil)
 var decoder, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(0))
 
+func main() {
+	http.ListenAndServe(":8888", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		Cache()
+		writer.Write([]byte("ok"))
+	}))
+}
+
+var cache, cacheErr = ristretto.NewCache(&ristretto.Config{
+	NumCounters: 1e7,     // number of keys to track frequency of (10M).
+	MaxCost:     4 << 30, // maximum cost of cache (1GB).
+	BufferItems: 64,      // number of keys per Get buffer.
+})
+
 func Cache() {
-	cache, err := ristretto.NewCache(&ristretto.Config{
-		NumCounters: 1e7,     // number of keys to track frequency of (10M).
-		MaxCost:     4 << 30, // maximum cost of cache (1GB).
-		BufferItems: 64,      // number of keys per Get buffer.
-	})
-	if err != nil {
-		panic(err)
+	if cacheErr != nil {
+		panic(cacheErr)
 	}
 
-	output := Compress(input)
-	glog.Info("input string len ", len(input))
-	glog.Info("compress string len ", len(output))
-	glog.Info("compress string hash is ", gmd5.MustEncrypt(output))
-
 	key := gtime.TimestampNanoStr()
-	glog.Info(key)
+
+	output := Compress(input)
+	if debug {
+		glog.Info(key)
+		glog.Info("input string len ", len(input))
+		glog.Info("compress string len ", len(output))
+		glog.Info("compress string hash is ", gmd5.MustEncrypt(output))
+	}
+
 	cache.Set(key, output, 1)
 	cache.Wait()
 
@@ -42,14 +51,16 @@ func Cache() {
 		panic("missing value")
 	}
 
-	out, err := Decompress(value.([]byte))
+	out := Decompress(value.([]byte))
 
-	glog.Info("cached string len ", len(value.([]byte)))
-	glog.Info("decompress string len ", len(out))
-	glog.Info("decompress string hash is ", gmd5.MustEncrypt(out))
+	if debug {
+		glog.Info("cached string len ", len(value.([]byte)))
+		glog.Info("decompress string len ", len(out))
+		glog.Info("decompress string hash is ", gmd5.MustEncrypt(out))
+	}
 
-	if string(input) == string(out) {
-		glog.Info("比对成功")
+	if string(input) != string(out) {
+		glog.Info("比对失败")
 	}
 }
 
@@ -59,9 +70,12 @@ func loadContent() []byte {
 }
 
 func Compress(src []byte) []byte {
-	return encoder.EncodeAll(src, make([]byte, 0, len(src)))
+	return src
+	//return encoder.EncodeAll(src, make([]byte, 0, len(src)))
 }
 
-func Decompress(src []byte) ([]byte, error) {
-	return decoder.DecodeAll(src, nil)
+func Decompress(src []byte) []byte {
+	return src
+	//ret, _ := decoder.DecodeAll(src, nil)
+	//return ret
 }
